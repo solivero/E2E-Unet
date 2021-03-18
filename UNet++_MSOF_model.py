@@ -1,25 +1,19 @@
 import os
 import numpy as np
-from keras import Input, Model
-from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, merge, Concatenate,Conv2DTranspose,add,Concatenate,Add,Subtract
-from keras.optimizers import Adam,SGD
-from keras.utils import plot_model
-from keras import backend as K
-from keras.layers import add,BatchNormalization,UpSampling2D
-from keras.layers import Embedding,Input,Conv2D,Conv3D,Lambda,concatenate,Flatten,Dense,Dropout,MaxPooling2D,Activation,GlobalAveragePooling2D,GlobalAveragePooling3D,BatchNormalization
-from keras import regularizers
 import tensorflow as tf
-from keras import objectives
-from keras.regularizers import l2
-from keras.callbacks import Callback
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten, Concatenate, Conv2DTranspose, Concatenate, Add, Subtract
+from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import add,BatchNormalization,UpSampling2D
+from tensorflow.keras.layers import Embedding,Input,Conv2D,Conv3D,Lambda,concatenate,Flatten,Dense,Dropout,MaxPooling2D,Activation,GlobalAveragePooling2D,GlobalAveragePooling3D,BatchNormalization
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.callbacks import Callback
 
 SEED = 1998
 np.random.seed(SEED)
-session_conf = tf.ConfigProto(intra_op_parallelism_threads=1,
-                              inter_op_parallelism_threads=1)
-tf.set_random_seed(SEED)
-sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
-K.set_session(sess)
+tf.random.set_seed(SEED)
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
@@ -138,7 +132,7 @@ def Nest_Net2(input_shape, num_class=1, deep_supervision=False):
 
 
     if deep_supervision:
-        model = Model(input=inputs, output=[nestnet_output_1,
+        model = Model(inputs=inputs, outputs=[nestnet_output_1,
                                             nestnet_output_2,
                                             nestnet_output_3,
                                             nestnet_output_4, nestnet_output_5])
@@ -150,7 +144,7 @@ def Nest_Net2(input_shape, num_class=1, deep_supervision=False):
                       metrics=['accuracy']
                       )
     else:
-        model = Model(input=inputs, output=[nestnet_output_4])
+        model = Model(inputs=inputs, outputs=[nestnet_output_4])
         model.compile(optimizer=Adam(lr=1e-4), loss=weighted_bce_dice_loss,
                       metrics=['accuracy'])
     model.summary()
