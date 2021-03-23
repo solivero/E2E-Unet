@@ -41,12 +41,12 @@ def weighted_bce_dice_loss(y_true,y_pred):
     # return K.weighted_binary_crossentropy(y_true, y_pred,pos_weight) + 0.35 * (self.dice_coef_loss(y_true, y_pred)) #not work
     return weighted_bce + 0.5 * (dice_coef_loss(y_true, y_pred))
 def standard_unit(input_tensor, stage, nb_filter, kernel_size=3, mode='None'):
-    x = Conv2D(nb_filter, (kernel_size, kernel_size), activation='selu', name='conv' + stage + '_1',
+    x = Conv2D(nb_filter, (kernel_size, kernel_size), activation='elu', name='conv' + stage + '_1',
                kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(input_tensor)
     x0 = x
     # x = Dropout(0.2, name='dp' + stage + '_1')(x)
     x = BatchNormalization(name='bn' + stage + '_1')(x)  # much better than dropout
-    x = Conv2D(nb_filter, (kernel_size, kernel_size), activation='selu', name='conv' + stage + '_2',
+    x = Conv2D(nb_filter, (kernel_size, kernel_size), activation='elu', name='conv' + stage + '_2',
                kernel_initializer='he_normal', padding='same', kernel_regularizer=l2(1e-4))(x)
     # x = Dropout(0.2, name='dp' + stage + '_2')(x)
     x = BatchNormalization(name='bn' + stage + '_2')(x)
@@ -153,6 +153,11 @@ def Nest_Net2(input_shape, num_class=1, deep_supervision=False):
 if __name__ == '__main__':
     input_shape = [256, 256, 6]
     model=Nest_Net2(input_shape,deep_supervision=True)
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+    # Save the model.
+    with open('model.tflite', 'wb') as f:
+        f.write(tflite_model)
     output_layer=model.get_layer('output_5')
     print("the output shape is:")
     print(output_layer.output_shape)

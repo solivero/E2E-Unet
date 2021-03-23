@@ -1,5 +1,4 @@
- FROM tensorflow/tensorflow
- WORKDIR /app
- COPY . .
- #RUN pip install keras
- CMD ["python3", "UNet++_MSOF_model.py"]
+FROM tensorflow/tensorflow
+WORKDIR /app
+RUN pip install tensorflow-io
+RUN ["/bin/bash"]
