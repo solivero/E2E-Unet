@@ -20,10 +20,10 @@ dataset_path = os.path.join(root, "spacenet7")
 training_data = "train/"
 val_data = "train/"
 # Image size that we are going to use
-IMG_SIZE = 1024
+IMG_SIZE = 256
 SEED = 42
 
-def parse_image_pair(img1_path: str, img2_path: str) -> dict:
+def parse_image_pair(csv_batch) -> dict:
     """Load an image and its annotation (mask) and returning
     a dictionary.
 
@@ -37,10 +37,12 @@ def parse_image_pair(img1_path: str, img2_path: str) -> dict:
     dict
         Dictionary mapping an image and its annotation.
     """
+    img1_path = csv_batch['image1'][0]
     image1 = tf.io.read_file(img1_path)
     image1 = tfio.experimental.image.decode_tiff(image1)
     image1 = tf.image.convert_image_dtype(image1, tf.uint8)[:, :, :3]
 
+    img2_path = csv_batch['image2'][0]
     image2 = tf.io.read_file(img2_path)
     image2 = tfio.experimental.image.decode_tiff(image2)
     image2 = tf.image.convert_image_dtype(image2, tf.uint8)[:, :, :3]
@@ -49,16 +51,17 @@ def parse_image_pair(img1_path: str, img2_path: str) -> dict:
     # .../trainset/images/training/ADE_train_00000001.jpg
     # Its corresponding annotation path is:
     # .../trainset/annotations/training/ADE_train_00000001.png
-    mask_path = tf.strings.regex_replace(img1_path, "images_masked", "change_maps")
-    prefix_len = len('global_monthly_')
-    date_len = 7
-    img1_file = tf.strings.split(img1_path, sep='/')[-1]
-    date1 = tf.strings.substr(img1_file, prefix_len, date_len)
-    img2_file = tf.strings.split(img2_path, sep='/')[-1]
-    date2 = tf.strings.substr(img2_file, prefix_len, date_len)
-    double_date = tf.strings.join([date1, date2], separator='-')
+    #mask_path = tf.strings.regex_replace(img1_path, "images_masked", "change_maps")
+    #prefix_len = len('global_monthly_')
+    #date_len = 7
+    #img1_file = tf.strings.split(img1_path, sep='/')[-1]
+    #date1 = tf.strings.substr(img1_file, prefix_len, date_len)
+    #img2_file = tf.strings.split(img2_path, sep='/')[-1]
+    #date2 = tf.strings.substr(img2_file, prefix_len, date_len)
+    #double_date = tf.strings.join([date1, date2], separator='-')
 
-    cm_name = tf.strings.regex_replace(mask_path, r'20\d{2}_\d{2}', double_date)
+    #cm_name = tf.strings.regex_replace(mask_path, r'20\d{2}_\d{2}', double_date)
+    cm_name = csv_batch['label'][0]
 
     #cm_name = mask_path
 
@@ -67,17 +70,35 @@ def parse_image_pair(img1_path: str, img2_path: str) -> dict:
     mask = tfio.experimental.image.decode_tiff(mask)
     mask = tf.image.convert_image_dtype(mask, tf.uint8)[:, :, :1]
     mask = tf.where(mask == 255, np.dtype('uint8').type(1), mask)
-    filler_row = tf.zeros((1, IMG_SIZE, 1), tf.uint8)
-    mask = tf.concat([mask, filler_row], axis=0)
+    #filler_row = tf.zeros((1, 1024, 1), tf.uint8)
+    #mask = tf.concat([mask, filler_row], axis=0)
 
     # Note that we have to convert the new value (0)
 
     merged_image = tf.concat([image1, image2], axis=2)
-    filler_row = tf.zeros((1, IMG_SIZE, 6), tf.uint8)
-    merged_image = tf.concat([merged_image, filler_row], axis=0)
+    #filler_row = tf.zeros((1, 1024, 6), tf.uint8)
+    #merged_image = tf.concat([merged_image, filler_row], axis=0)
 
-    return {'image': merged_image, 'segmentation_mask': mask}
-    # return merged_image, mask
+    #return {'image': merged_image, 'segmentation_mask': mask}
+    return merged_image, mask
+
+@tf.function
+def make_patches(image: tf.Tensor, mask: tf.Tensor):
+    image_patches = tf.image.extract_patches(images=tf.expand_dims(image, 0),
+                        sizes=[1, IMG_SIZE, IMG_SIZE, 1],
+                        strides=[1, IMG_SIZE, IMG_SIZE, 1],
+                        rates=[1, 1, 1, 1],
+                        padding='SAME')[0]
+    print(image_patches.shape)
+    image_patch_batch = tf.reshape(image_patches, (16, IMG_SIZE, IMG_SIZE, 6))
+    mask_patches = tf.image.extract_patches(images=tf.expand_dims(mask, 0),
+                        sizes=[1, IMG_SIZE, IMG_SIZE, 1],
+                        strides=[1, IMG_SIZE, IMG_SIZE, 1],
+                        rates=[1, 1, 1, 1],
+                        padding='SAME')[0]
+    mask_patch_batch = tf.reshape(mask_patches, (16, IMG_SIZE, IMG_SIZE, 1))
+    return image_patch_batch, mask_patch_batch
+
 
 
 #val_dataset = tf.data.Dataset.list_files(dataset_path + val_data + "*.tif", seed=SEED)
@@ -107,7 +128,7 @@ def normalize(input_image: tf.Tensor, input_mask: tf.Tensor) -> tuple:
     return input_image, input_mask
 
 @tf.function
-def load_image_train(datapoint: dict) -> tuple:
+def load_image_train(image: tf.Tensor, mask: tf.Tensor) -> tuple:
     """Apply some transformations to an input dictionary
     containing a train image and its annotation.
 
@@ -127,8 +148,8 @@ def load_image_train(datapoint: dict) -> tuple:
     tuple
         A modified image and its annotation.
     """
-    input_image = tf.image.resize(datapoint['image'], (IMG_SIZE, IMG_SIZE))
-    input_mask = tf.image.resize(datapoint['segmentation_mask'], (IMG_SIZE, IMG_SIZE))
+    input_image = tf.image.resize(image, (IMG_SIZE, IMG_SIZE))
+    input_mask = tf.image.resize(mask, (IMG_SIZE, IMG_SIZE))
 
     if tf.random.uniform(()) > 0.5:
         input_image = tf.image.flip_left_right(input_image)
@@ -164,13 +185,9 @@ def load_image_test(datapoint: dict) -> tuple:
 
     return input_image, input_mask
 
-train_dataset = tf.data.Dataset.list_files(os.path.join(dataset_path, training_data + "L15-0357E-1223N_1429_3296_13/images_masked/*.tif"), shuffle=False)
-train_image_pairs = tf.data.Dataset.zip((train_dataset, train_dataset.skip(1)))
-train_dataset = train_image_pairs.map(parse_image_pair)
-item = next(iter(train_dataset))
-print(item['image'].shape)
-print(item['segmentation_mask'].shape)
-input_shape = [1024, 1024, 6]
+train_dataset = tf.data.Dataset.list_files(os.path.join(dataset_path, training_data + "*/images_masked/*.tif"), shuffle=False)
+train_dataset = tf.data.Dataset.zip((train_dataset, train_dataset.skip(1)))
+input_shape = [IMG_SIZE, IMG_SIZE, 6]
 # for reference about the BUFFER_SIZE in shuffle:
 # https://stackoverflow.com/questions/46444018/meaning-of-buffer-size-in-dataset-map-dataset-prefetch-and-dataset-shuffle
 BUFFER_SIZE = 1000
@@ -179,10 +196,17 @@ BATCH_SIZE = 6
 dataset = {"train": train_dataset, "val": train_dataset}
 
 # -- Train Dataset --#
+train_csv_ds = tf.data.experimental.make_csv_dataset(
+    '/app/spacenet7/csvs/sn7_baseline_train_df.csv',
+    batch_size=1, # Multiplied by 16 when patching
+    num_epochs=1,
+    ignore_errors=True,)
+dataset['train'] = train_csv_ds.map(parse_image_pair)
+dataset['train'] = dataset['train'].map(make_patches)
 dataset['train'] = dataset['train'].map(load_image_train, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 dataset['train'] = dataset['train'].shuffle(buffer_size=BUFFER_SIZE, seed=SEED)
 #dataset['train'] = dataset['train'].repeat(2)
-dataset['train'] = dataset['train'].batch(BATCH_SIZE)
+#dataset['train'] = dataset['train'].batch(BATCH_SIZE)
 dataset['train'] = dataset['train'].prefetch(buffer_size=AUTOTUNE)
 
 Nest_Net2(input_shape).fit(dataset['train'])
