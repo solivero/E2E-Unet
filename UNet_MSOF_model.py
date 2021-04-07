@@ -10,11 +10,12 @@ from tensorflow.keras.layers import add,BatchNormalization,UpSampling2D
 from tensorflow.keras.layers import Embedding,Input,Conv2D,Conv3D,Lambda,concatenate,Flatten,Dense,Dropout,MaxPooling2D,Activation,GlobalAveragePooling2D,GlobalAveragePooling3D,BatchNormalization
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.callbacks import Callback
+from tensorflow.keras.metrics import Recall, Precision
 
 SEED = 1998
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 def dice_coef(y_true, y_pred, smooth=1, weight=0.5):
@@ -141,17 +142,17 @@ def Nest_Net2(input_shape, num_class=1, deep_supervision=False):
                       loss=[weighted_bce_dice_loss, weighted_bce_dice_loss, weighted_bce_dice_loss,
                             weighted_bce_dice_loss, weighted_bce_dice_loss],
                       loss_weights=[0.5, 0.5, 0.75, 0.5, 1.0],
-                      metrics=['accuracy']
+                      metrics=[Recall(), Precision()]
                       )
     else:
         model = Model(inputs=inputs, outputs=[nestnet_output_4])
         model.compile(optimizer=Adam(lr=1e-4), loss=weighted_bce_dice_loss,
-                      metrics=['accuracy'])
+                      metrics=[Recall(), Precision()])
     model.summary()
     return model
 
 if __name__ == '__main__':
-    input_shape = [256, 256, 6]
+    input_shape = [512, 512, 6]
     model=Nest_Net2(input_shape,deep_supervision=True)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     tflite_model = converter.convert()
