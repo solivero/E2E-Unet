@@ -35,12 +35,12 @@ def parse_image_pair(csv_batch) -> dict:
     """
     img1_path = csv_batch['image1'][0]
     image1 = tf.io.read_file(img1_path)
-    image1 = tf.image.decode_png(image1)
+    image1 = tf.image.decode_png(image1, channels=3)
     image1 = tf.image.convert_image_dtype(image1, tf.uint8)[:, :, :3]
 
     img2_path = csv_batch['image2'][0]
     image2 = tf.io.read_file(img2_path)
-    image2 = tf.image.decode_png(image2)
+    image2 = tf.image.decode_png(image2, channels=3)
     image2 = tf.image.convert_image_dtype(image2, tf.uint8)[:, :, :3]
 
     #cm_name = tf.strings.regex_replace(mask_path, r'20\d{2}_\d{2}', double_date)
@@ -50,7 +50,7 @@ def parse_image_pair(csv_batch) -> dict:
 
     mask = tf.io.read_file(cm_name)
     # The masks contain a class index for each pixels
-    mask = tf.image.decode_png(mask)
+    mask = tf.image.decode_png(mask, channels=1)
     mask = tf.image.convert_image_dtype(mask, tf.uint8)[:, :, :1]
     mask = tf.where(mask == 255, np.dtype('uint8').type(1), mask)
     #filler_row = tf.zeros((1, 1024, 1), tf.uint8)
@@ -183,11 +183,14 @@ def load_csv_dataset(csv_path):
         ignore_errors=True)
         # Shuffle train_csv_ds first to have diverse val set?
 
+def make_patches_ds(image, mask):
+    return tf.data.Dataset.from_tensor_slices(make_patches(image, mask))
+
 def load_image_dataset(csv_dataset):
     return csv_dataset \
         .map(parse_image_pair) \
         .map(upscale_images) \
-        .flat_map(lambda image, mask: tf.data.Dataset.from_tensor_slices(make_patches(image, mask))) \
+        .flat_map(make_patches_ds) \
         .map(load_image_train, num_parallel_calls=tf.data.experimental.AUTOTUNE) \
 
 def load_datasets(csv_path, batch_size=8, val_size=128, buffer_size=100):
@@ -195,8 +198,8 @@ def load_datasets(csv_path, batch_size=8, val_size=128, buffer_size=100):
     train_csv = csv_dataset.skip(val_size)
     dataset_train = load_image_dataset(train_csv) \
         .batch(batch_size, drop_remainder=True) \
-        .prefetch(buffer_size=AUTOTUNE)
-        #.shuffle(buffer_size=buffer_size, seed=SEED) \
+        .prefetch(buffer_size=AUTOTUNE) \
+        .shuffle(buffer_size=buffer_size, seed=SEED)
     val_csv = csv_dataset.take(val_size)
     dataset_val = load_image_dataset(val_csv) \
         .batch(batch_size, drop_remainder=True) \

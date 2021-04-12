@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from dataset import load_datasets
 from UNet_MSOF_model import weighted_bce_dice_loss, Nest_Net2
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, CSVLogger
 from tensorflow.keras.metrics import BinaryAccuracy, MeanIoU, Recall, Precision, AUC
 from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow_addons.metrics import CohenKappa, F1Score
@@ -32,7 +32,7 @@ DATA_PATH = FLAGS.data_path
 MODEL_PATH = FLAGS.model_path
 MODEL_NAME = FLAGS.model_name
 
-dataset_train, dataset_val = load_datasets(DATA_PATH, batch_size=BATCH_SZ)
+dataset_train, dataset_val = load_datasets(DATA_PATH, batch_size=BATCH_SZ, buffer_size=1000, val_size=128)
 input_shape = [512, 512, 6]
 model = Nest_Net2(input_shape)
 print('Dataset spec')
@@ -48,13 +48,18 @@ auc = AUC(num_thresholds=20)
 iou = MeanIoU(num_classes=2)
 # use LR?
 
-model.compile(optimizer='adam',
-                       loss=weighted_bce_dice_loss, metrics=['accuracy', recall, precision, iou])
+#model.compile(optimizer='adam',
+#                       loss=weighted_bce_dice_loss, metrics=['accuracy', recall, precision, iou])
 #model.compile(optimizer='adam', loss=BinaryCrossentropy(), metrics=[accuracy, recall, precision])
 model_checkpoint_callback = ModelCheckpoint(
     filepath=CHECKPOINT_PATH,
     monitor='val_loss')
 early_stopping = EarlyStopping(patience=10)
+now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+training_dir = os.path.join(MODEL_PATH, f'training_{MODEL_NAME}_{now}')
+os.mkdir(training_dir)
+csv_file = os.path.join(training_dir, 'training_log.csv')
+csv_logger = CSVLogger(csv_file)
 
 train = True
 # 1024 * 2 = 2048 upscaled image
@@ -62,19 +67,17 @@ train = True
 # 4^2 = 16 patches per image
 # 16 / 8 = 2 batches per image
 if train:
-    model_history = model.fit(dataset_train.take(2),
-        validation_data=dataset_val.take(10),
+    model_history = model.fit(dataset_train,
+        validation_data=dataset_val,
         epochs=MAX_EPOCH,
-        callbacks=[model_checkpoint_callback, early_stopping],
+        callbacks=[model_checkpoint_callback, early_stopping, csv_logger],
     )
 
 
-now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-training_dir = os.path.join(MODEL_PATH, 'training_' + now)
-os.mkdir(training_dir)
 config_file = os.path.join(training_dir, 'config.json')
 config = json.dumps({
     'model': MODEL_NAME,
+    'input_shape': input_shape,
     'batch_size': BATCH_SZ,
     'max_epoch': MAX_EPOCH,
     'lr': LEARNING_RATE
@@ -82,9 +85,9 @@ config = json.dumps({
 with open(config_file, 'w') as f:
     f.write(config)
 
-history_dict = model_history.history if train else {}
-history_file = os.path.join(training_dir, 'history.json')
-json.dump(history_dict, open(history_file, 'w'))
+#history_dict = model_history.history if train else {}
+#history_file = os.path.join(training_dir, 'history.json')
+#json.dump(history_dict, open(history_file, 'w'))
 
 saved_model_path = os.path.join(training_dir, MODEL_SAVE_PATH)
 print('Saving model to', saved_model_path)
